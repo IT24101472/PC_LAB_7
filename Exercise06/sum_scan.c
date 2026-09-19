@@ -31,11 +31,6 @@ int main(int argc, char **argv) {
     int *local_chunk =
         (int *)malloc(chunk_size * sizeof(int));
 
-    double start = MPI_Wtime();
-
-    /*
-     * Distribute chunks to processes
-     */
     MPI_Scatter(
         array,
         chunk_size,
@@ -47,9 +42,6 @@ int main(int argc, char **argv) {
         MPI_COMM_WORLD
     );
 
-    /*
-     * Calculate local sum
-     */
     long long local_sum = 0;
 
     for (int i = 0; i < chunk_size; i++) {
@@ -57,13 +49,13 @@ int main(int argc, char **argv) {
     }
 
     /*
-     * Every process receives the final total
+     * Prefix reduction
      */
-    long long total_sum = 0;
+    long long prefix_sum = 0;
 
-    MPI_Allreduce(
+    MPI_Scan(
         &local_sum,
-        &total_sum,
+        &prefix_sum,
         1,
         MPI_LONG_LONG,
         MPI_SUM,
@@ -71,38 +63,34 @@ int main(int argc, char **argv) {
     );
 
     /*
-     * Calculate percentage contribution
+     * Sum of all previous ranks
      */
-    double percentage =
-        ((double)local_sum / total_sum) * 100.0;
+    long long sum_before_me =
+        prefix_sum - local_sum;
 
     printf(
-        "Rank %d: local_sum = %lld, total_sum = %lld, contribution = %.2f%%\n",
+        "Rank %d: local_sum = %lld, prefix_sum = %lld, sum_before_me = %lld\n",
         rank,
         local_sum,
-        total_sum,
-        percentage
+        prefix_sum,
+        sum_before_me
     );
 
     /*
-     * Verification only on root
+     * Last rank verifies global total
      */
-    if (rank == 0) {
-
-        double elapsed = MPI_Wtime() - start;
+    if (rank == size - 1) {
 
         long long expected =
             (long long)N * (N + 1) / 2;
 
-        printf("\n[Allreduce] Total sum = %lld\n", total_sum);
-        printf("[Allreduce] Expected  = %lld\n", expected);
+        printf("\n[Scan] Final prefix sum = %lld\n", prefix_sum);
+        printf("[Scan] Expected         = %lld\n", expected);
 
         printf(
-            "[Allreduce] Correct?   = %s\n",
-            total_sum == expected ? "YES" : "NO"
+            "[Scan] Correct?          = %s\n",
+            prefix_sum == expected ? "YES" : "NO"
         );
-
-        printf("[Allreduce] Time      = %.4f sec\n", elapsed);
     }
 
     if (rank == 0) {
